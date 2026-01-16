@@ -1,5 +1,6 @@
 package org.example.service;
 
+import org.example.model.Player;
 import org.example.model.Session;
 import org.springframework.stereotype.Service;
 
@@ -10,162 +11,160 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SudokuService {
 
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
-    private final Random random = new Random();
 
-    public Session createSession(String difficulty, String userId) {
+    public Session createGame(String difficulty, String userId, String name) {
         int cellsToRemove = switch (difficulty.toLowerCase()) {
-            case "easy"   -> 40;   // ~41–50 подсказок
-            case "medium" -> 50;   // ~31–40 подсказок
-            case "hard"   -> 60;   // ~21–30 подсказок
-            default       -> 50;
+            case "easy" -> 40;
+            case "medium" -> 50;
+            case "hard" -> 60;
+            default -> 50;
         };
 
-        // 1. Генерируем полностью заполненную доску (81 клетка)
-        int[][] fullBoard = generateFullBoard();
+        int[][] board = generateFullBoard();
+        int[][] solution = copyBoard(board);
+        removeCells(board, cellsToRemove);
 
-        // 2. Копируем для хранения правильного решения
-        int[][] solution = copyBoard(fullBoard);
-
-        // 3. Создаём головоломку — удаляем клетки
-        int[][] puzzle = copyBoard(fullBoard);
-        removeCells(puzzle, cellsToRemove);
-
-        // 4. Создаём сессию
         Session session = new Session();
-        session.setPuzzle(puzzle);
+        session.setPuzzle(copyBoard(board));
         session.setSolution(solution);
-        session.setBoard(copyBoard(puzzle));  // начальное состояние игры
-        session.getPlayers().add(userId);
-        session.setCurrentTurn(0);
-        // session.setFinished(false);  // если у тебя есть такое поле — раскомментируй
+        session.setCurrentBoard(copyBoard(board));
+
+        Player player = new Player();
+        player.setId(userId);
+        player.setName(name);
+        session.getPlayers().add(player);
 
         sessions.put(session.getSessionId(), session);
-
-        // Отладочный вывод (можно удалить позже)
-        System.out.printf("Сессия создана | sessionId: %s%n", session.getSessionId());
-        System.out.printf("До удаления: %d клеток заполнено%n", countFilled(fullBoard));
-        System.out.printf("После удаления: %d клеток заполнено (удалено %d)%n",
-                countFilled(puzzle), cellsToRemove);
-
         return session;
     }
 
-    public Session joinSession(String sessionId, String userId) {
+    public Optional<Session> joinGame(String sessionId, String userId, String name) {
         Session session = sessions.get(sessionId);
-        if (session == null) {
-            return null;
+        if (session == null || session.isFinished()) {
+            return Optional.empty();
         }
-        if (!session.getPlayers().contains(userId)) {
-            session.getPlayers().add(userId);
+        if (session.getPlayers().stream().noneMatch(p -> p.getId().equals(userId))) {
+            Player player = new Player();
+            player.setId(userId);
+            player.setName(name);
+            session.getPlayers().add(player);
         }
-        return session;
+        return Optional.of(session);
     }
 
-    public Session getSession(String sessionId) {
-        return sessions.get(sessionId);
+    public Optional<Session> getGameState(String sessionId) {
+        return Optional.ofNullable(sessions.get(sessionId));
     }
 
-    // ────────────────────────────────────────────────
-    //               Генерация судоку
-    // ────────────────────────────────────────────────
+    public boolean makeMove(String sessionId, String userId, int row, int col, int value) {
+        Session session = sessions.get(sessionId);
+        if (session == null || session.isFinished()) return false;
 
-    private int[][] generateFullBoard() {
-        int[][] board = new int[9][9];
+        int playerIndex = session.getPlayers().stream().filter(p -> p.getId().equals(userId)).mapToInt(session.getPlayers()::indexOf).findFirst().orElse(-1);
+        if (playerIndex < 0) return false;
 
-        // Пытаемся заполнить (в 99.9% случаев получается с первого раза)
-        if (!fillBoard(board)) {
-            // Очень редкий случай — повторяем
-            board = new int[9][9];
-            fillBoard(board);
+        if (session.getPlayers().size() > 1 && playerIndex != session.getCurrentTurnIndex()) {
+            return false; // Не очередь в мультиплеере
         }
 
-        return board;
-    }
-
-    private boolean fillBoard(int[][] board) {
-        // Ищем первую пустую клетку
-        int row = -1;
-        int col = -1;
-        boolean foundEmpty = false;
-
-        outer:
-        for (int i = 0; i < 9; i++) {
-            for (int j = 0; j < 9; j++) {
-                if (board[i][j] == 0) {
-                    row = i;
-                    col = j;
-                    foundEmpty = true;
-                    break outer;
-                }
-            }
+        if (row < 0 || row > 8 || col < 0 || col > 8 || value < 1 || value > 9) {
+            return false;
         }
 
-        // Если пустых клеток нет → доска заполнена
-        if (!foundEmpty) {
-            return true;
+        if (session.getCurrentBoard()[row][col] != 0) {
+            return false;
         }
 
-        // Пробуем числа 1–9 в случайном порядке
-        List<Integer> numbers = new ArrayList<>(Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9));
-        Collections.shuffle(numbers, random);
-
-        for (int num : numbers) {
-            if (isSafe(board, row, col, num)) {
-                board[row][col] = num;
-
-                if (fillBoard(board)) {
-                    return true;
-                }
-
-                // откат
-                board[row][col] = 0;
-            }
+        if (session.getSolution()[row][col] != value) {
+            return false;
         }
 
-        return false;
-    }
-
-    private boolean isSafe(int[][] board, int row, int col, int num) {
-        // строка
-        for (int x = 0; x < 9; x++) {
-            if (board[row][x] == num) return false;
+        session.getCurrentBoard()[row][col] = value;
+        if (session.getPlayers().size() > 1) {
+            session.setCurrentTurnIndex((session.getCurrentTurnIndex() + 1) % session.getPlayers().size());
         }
 
-        // столбец
-        for (int x = 0; x < 9; x++) {
-            if (board[x][col] == num) return false;
-        }
-
-        // 3×3 блок
-        int startRow = row - row % 3;
-        int startCol = col - col % 3;
-
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                if (board[startRow + i][startCol + j] == num) {
-                    return false;
-                }
-            }
+        if (isSolved(session.getCurrentBoard())) {
+            session.setFinished(true);
         }
 
         return true;
     }
 
+    public boolean passTurn(String sessionId, String userId) {
+        Session session = sessions.get(sessionId);
+        if (session == null || session.isFinished() || session.getPlayers().size() <= 1) return false;
+
+        int playerIndex = session.getPlayers().stream().filter(p -> p.getId().equals(userId)).mapToInt(session.getPlayers()::indexOf).findFirst().orElse(-1);
+        if (playerIndex < 0 || playerIndex != session.getCurrentTurnIndex()) {
+            return false;
+        }
+
+        session.setCurrentTurnIndex((session.getCurrentTurnIndex() + 1) % session.getPlayers().size());
+        return true;
+    }
+
+    // Генерация судоку (без изменений)
+    private int[][] generateFullBoard() {
+        int[][] board = new int[9][9];
+        fillBoard(board);
+        return board;
+    }
+
+    private boolean fillBoard(int[][] board) {
+        for (int r = 0; r < 9; r++) {
+            for (int c = 0; c < 9; c++) {
+                if (board[r][c] == 0) {
+                    List<Integer> nums = new ArrayList<>(List.of(1,2,3,4,5,6,7,8,9));
+                    Collections.shuffle(nums);
+                    for (int num : nums) {
+                        if (isSafe(board, r, c, num)) {
+                            board[r][c] = num;
+                            if (fillBoard(board)) return true;
+                            board[r][c] = 0;
+                        }
+                    }
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private boolean isSafe(int[][] board, int row, int col, int num) {
+        for (int i = 0; i < 9; i++) {
+            if (board[row][i] == num || board[i][col] == num) return false;
+        }
+        int startRow = row - row % 3;
+        int startCol = col - col % 3;
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                if (board[startRow + i][startCol + j] == num) return false;
+            }
+        }
+        return true;
+    }
+
     private void removeCells(int[][] board, int count) {
-        int removed = 0;
-        while (removed < count) {
-            int r = random.nextInt(9);
-            int c = random.nextInt(9);
+        Random rand = new Random();
+        while (count > 0) {
+            int r = rand.nextInt(9);
+            int c = rand.nextInt(9);
             if (board[r][c] != 0) {
                 board[r][c] = 0;
-                removed++;
+                count--;
             }
         }
     }
 
-    // ────────────────────────────────────────────────
-    //               Вспомогательные методы
-    // ────────────────────────────────────────────────
+    private boolean isSolved(int[][] board) {
+        for (int[] row : board) {
+            for (int cell : row) {
+                if (cell == 0) return false;
+            }
+        }
+        return true;
+    }
 
     private int[][] copyBoard(int[][] src) {
         int[][] dest = new int[9][9];
@@ -173,71 +172,5 @@ public class SudokuService {
             System.arraycopy(src[i], 0, dest[i], 0, 9);
         }
         return dest;
-    }
-
-    private int countFilled(int[][] board) {
-        int count = 0;
-        for (int[] row : board) {
-            for (int cell : row) {
-                if (cell != 0) count++;
-            }
-        }
-        return count;
-    }
-
-    // ────────────────────────────────────────────────
-    //               Методы для ходов (пример)
-    // ────────────────────────────────────────────────
-
-    public boolean makeMove(String sessionId, String userId, int row, int col, int value) {
-        Session session = sessions.get(sessionId);
-        if (session == null) return false;
-
-        // Здесь твоя логика проверки очереди, пустой клетки и правильности значения
-        // ...
-
-        // Пример минимальной реализации
-        if (session.getBoard()[row][col] == 0 &&
-                session.getSolution()[row][col] == value) {
-            session.getBoard()[row][col] = value;
-
-            // Переход хода
-            session.setCurrentTurn(
-                    (session.getCurrentTurn() + 1) % session.getPlayers().size()
-            );
-
-            // Проверка завершения (если нужно)
-            if (countFilled(session.getBoard()) == 81) {
-                // session.setFinished(true);
-                // можно отправить сообщение всем
-            }
-
-            return true;
-        }
-        return false;
-    }
-
-    public boolean passTurn(String sessionId, String userId) {
-        Session session = sessions.get(sessionId);
-        if (session == null) return false;
-
-        // Проверка, что это ход этого игрока
-        // ...
-
-        session.setCurrentTurn(
-                (session.getCurrentTurn() + 1) % session.getPlayers().size()
-        );
-        return true;
-    }
-
-    public boolean isBoardFull(int[][] board) {
-        for (int r = 0; r < 9; r++) {
-            for (int c = 0; c < 9; c++) {
-                if (board[r][c] == 0) {
-                    return false;
-                }
-            }
-        }
-        return true;
     }
 }

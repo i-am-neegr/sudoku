@@ -26,15 +26,15 @@ public class TestSudokuController {
             @RequestParam(defaultValue = "medium") String difficulty,
             @RequestParam(defaultValue = "test-user-123") String userId) {
 
-        Session session = sudokuService.createSession(difficulty, userId);
+        Session session = sudokuService.createGame(difficulty, userId, "bober666");
 
         return ResponseEntity.ok(Map.of(
                 "sessionId", session.getSessionId(),
                 "difficulty", difficulty,
                 "players", session.getPlayers(),
-                "currentTurnIndex", session.getCurrentTurn(),
-                "boardPreview", getBoardPreview(session.getBoard()),
-                "puzzleSize", countFilledCells(session.getBoard()) + " / 81 filled"
+                "currentTurnIndex", session.getCurrentTurnIndex(),
+                "boardPreview", getBoardPreview(session.getCurrentBoard()),
+                "puzzleSize", countFilledCells(session.getCurrentBoard()) + " / 81 filled"
         ));
     }
 

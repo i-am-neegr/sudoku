@@ -8,10 +8,11 @@ import java.util.UUID;
 
 @Data
 public class Session {
-    private String sessionId = UUID.randomUUID().toString();
+    private final String sessionId = UUID.randomUUID().toString();
     private int[][] puzzle;
     private int[][] solution;
-    private List<String> players = new ArrayList<>();
-    private int currentTurn = 0;
-    private int[][] board;
+    private List<Player> players = new ArrayList<>();
+    private int currentTurnIndex = 0;
+    private int[][] currentBoard;
+    private boolean finished = false;
 }
