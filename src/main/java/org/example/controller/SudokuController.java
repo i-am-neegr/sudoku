@@ -2,9 +2,7 @@ package org.example.controller;
 
 import org.example.model.Session;
 import org.example.service.SudokuService;
-import org.example.util.TelegramAuthUtil;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,12 +22,7 @@ public class SudokuController {
     public ResponseEntity<Map<String, Object>> createGame(
             @RequestParam String difficulty,
             @RequestParam String userId,
-            @RequestParam String name,
-            @RequestParam String initData) {
-
-        if (!TelegramAuthUtil.validateInitData(initData)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid auth"));
-        }
+            @RequestParam String name) {   // ← убрали initData
 
         Session session = service.createGame(difficulty, userId, name);
 
@@ -47,12 +40,7 @@ public class SudokuController {
     public ResponseEntity<Map<String, Object>> joinGame(
             @PathVariable String sessionId,
             @RequestParam String userId,
-            @RequestParam String name,
-            @RequestParam String initData) {
-
-        if (!TelegramAuthUtil.validateInitData(initData)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid auth"));
-        }
+            @RequestParam String name) {   // ← убрали initData
 
         Optional<Session> opt = service.joinGame(sessionId, userId, name);
         if (opt.isEmpty()) {
@@ -71,13 +59,7 @@ public class SudokuController {
     }
 
     @GetMapping("/{sessionId}")
-    public ResponseEntity<Map<String, Object>> getState(
-            @PathVariable String sessionId,
-            @RequestParam String initData) {
-
-        if (!TelegramAuthUtil.validateInitData(initData)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid auth"));
-        }
+    public ResponseEntity<Map<String, Object>> getState(@PathVariable String sessionId) {
 
         Optional<Session> opt = service.getGameState(sessionId);
         if (opt.isEmpty()) {
@@ -101,12 +83,7 @@ public class SudokuController {
             @RequestParam String userId,
             @RequestParam int row,
             @RequestParam int col,
-            @RequestParam int value,
-            @RequestParam String initData) {
-
-        if (!TelegramAuthUtil.validateInitData(initData)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid auth"));
-        }
+            @RequestParam int value) {   // ← убрали initData
 
         boolean success = service.makeMove(sessionId, userId, row, col, value);
 
@@ -126,12 +103,7 @@ public class SudokuController {
     @PostMapping("/{sessionId}/pass")
     public ResponseEntity<Map<String, Object>> passTurn(
             @PathVariable String sessionId,
-            @RequestParam String userId,
-            @RequestParam String initData) {
-
-        if (!TelegramAuthUtil.validateInitData(initData)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid auth"));
-        }
+            @RequestParam String userId) {   // ← убрали initData
 
         boolean success = service.passTurn(sessionId, userId);
 
